@@ -22,7 +22,7 @@ bucket_name = "digital-porfolio"
 [vars]
 R2_ACCOUNT_ID = "4e22d95ee94f666a58992aef79d867bf"
 R2_BUCKET_NAME = "digital-porfolio"
-R2_PUBLIC_BASE_URL = "REPLACE_WITH_YOUR_PUBLIC_R2_URL"
+R2_PUBLIC_BASE_URL = "https://pub-eb3e9e97485f4db285ccca3215166dc9.r2.dev"
 
 # Secrets (set with `wrangler secret put <NAME>` — see DEPLOY.md):
 #   CREATOR_PIN
