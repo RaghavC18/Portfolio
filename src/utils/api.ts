@@ -40,25 +40,36 @@ let memoryCreatorToken = '';
 
 function getCreatorToken(): string {
   try {
-    return memoryCreatorToken || sessionStorage.getItem(CREATOR_TOKEN_KEY) || '';
+    return (
+      memoryCreatorToken ||
+      sessionStorage.getItem(CREATOR_TOKEN_KEY) ||
+      ''
+    );
   } catch {
     return '';
   }
 }
 
 function setCreatorToken(token: string) {
+  memoryCreatorToken = token;
+
   try {
-    memoryCreatorToken = token;
-    sessionStorage.setItem(CREATOR_TOKEN_KEY, token);
+    sessionStorage.setItem(
+      CREATOR_TOKEN_KEY,
+      token
+    );
   } catch {
     // Cookie fallback remains available for normal deployments.
   }
 }
 
 function clearCreatorToken() {
+  memoryCreatorToken = '';
+
   try {
-    memoryCreatorToken = '';
-    sessionStorage.removeItem(CREATOR_TOKEN_KEY);
+    sessionStorage.removeItem(
+      CREATOR_TOKEN_KEY
+    );
   } catch {
     // Ignore storage failures.
   }
@@ -78,19 +89,61 @@ function creatorHeaders(): Record<string, string> {
 export async function verifyCreatorPin(
   pin: string
 ): Promise<boolean> {
-  const response = await fetch('/api/admin/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify({ pin }),
-  });
+  const response = await fetch(
+    '/api/admin/login',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        pin,
+      }),
+    }
+  );
 
-  if (!response.ok) return false;
+  // A 401 specifically means the PIN is wrong.
+  if (response.status === 401) {
+    return false;
+  }
+
+  // Anything else is a server/deployment/configuration problem,
+  // not an incorrect PIN. Preserve the actual error.
+  if (!response.ok) {
+    const text = await response.text();
+
+    let message = '';
+
+    try {
+      const data = text
+        ? JSON.parse(text)
+        : null;
+
+      message =
+        data?.error ||
+        text ||
+        `Creator login failed with HTTP ${response.status}.`;
+    } catch {
+      message =
+        text ||
+        `Creator login failed with HTTP ${response.status}.`;
+    }
+
+    throw new Error(message);
+  }
 
   const data =
-    await parseJsonResponse<LoginResponse>(response);
+    await parseJsonResponse<LoginResponse>(
+      new Response(
+        await response.clone().text(),
+        {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        }
+      )
+    );
 
   if (data.token) {
     setCreatorToken(data.token);
@@ -101,11 +154,16 @@ export async function verifyCreatorPin(
 
 export async function logoutCreator(): Promise<void> {
   try {
-    await fetch('/api/admin/logout', {
-      method: 'POST',
-      headers: creatorHeaders(),
-      credentials: 'include',
-    });
+    await fetch(
+      '/api/admin/logout',
+      {
+        method: 'POST',
+        headers: {
+          ...creatorHeaders(),
+        },
+        credentials: 'include',
+      }
+    );
   } finally {
     clearCreatorToken();
   }
@@ -116,31 +174,39 @@ export async function uploadFileToServer(
   onProgress?: UploadProgressCallback
 ): Promise<string> {
   if (!file) {
-    throw new Error('No file selected.');
+    throw new Error(
+      'No file selected.'
+    );
   }
 
   if (file.size <= 0) {
-    throw new Error('The selected file is empty.');
+    throw new Error(
+      'The selected file is empty.'
+    );
   }
 
-  const presignResponse = await fetch(
-    '/api/r2/presign',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...creatorHeaders(),
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        filename: file.name,
-        contentType:
-          file.type || 'application/octet-stream',
-        size: file.size,
-        creatorToken: getCreatorToken(),
-      }),
-    }
-  );
+  const presignResponse =
+    await fetch(
+      '/api/r2/presign',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type':
+            'application/json',
+          ...creatorHeaders(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          filename: file.name,
+          contentType:
+            file.type ||
+            'application/octet-stream',
+          size: file.size,
+          creatorToken:
+            getCreatorToken(),
+        }),
+      }
+    );
 
   const presigned =
     await parseJsonResponse<PresignResponse>(
@@ -161,205 +227,290 @@ function uploadDirectToR2(
   uploadUrl: string,
   onProgress?: UploadProgressCallback
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+  return new Promise(
+    (resolve, reject) => {
+      const xhr =
+        new XMLHttpRequest();
 
-    xhr.open('PUT', uploadUrl, true);
-
-    if (file.type) {
-      xhr.setRequestHeader(
-        'Content-Type',
-        file.type
-      );
-    }
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-
-      const loaded = event.loaded;
-      const total = event.total;
-      const percent = Math.min(
-        99,
-        Math.round(
-          (loaded / total) * 100
-        )
+      xhr.open(
+        'PUT',
+        uploadUrl,
+        true
       );
 
-      onProgress?.(
-        percent,
-        loaded,
-        total
-      );
-    };
-
-    xhr.onload = () => {
-      if (
-        xhr.status >= 200 &&
-        xhr.status < 300
-      ) {
-        onProgress?.(
-          100,
-          file.size,
-          file.size
-        );
-
-        resolve();
-      } else {
-        reject(
-          new Error(
-            `R2 upload failed with HTTP ${xhr.status}.`
-          )
+      if (file.type) {
+        xhr.setRequestHeader(
+          'Content-Type',
+          file.type
         );
       }
-    };
 
-    xhr.onerror = () => {
-      reject(
-        new Error(
-          'Network error while uploading to R2.'
-        )
-      );
-    };
+      xhr.upload.onprogress = (
+        event
+      ) => {
+        if (!event.lengthComputable)
+          return;
 
-    xhr.onabort = () => {
-      reject(
-        new Error(
-          'Upload was cancelled.'
-        )
-      );
-    };
+        const loaded =
+          event.loaded;
+        const total =
+          event.total;
 
-    xhr.ontimeout = () => {
-      reject(
-        new Error(
-          'R2 upload timed out.'
-        )
-      );
-    };
+        const percent =
+          Math.min(
+            99,
+            Math.round(
+              (loaded / total) *
+                100
+            )
+          );
 
-    xhr.timeout =
-      30 * 60 * 1000;
+        onProgress?.(
+          percent,
+          loaded,
+          total
+        );
+      };
 
-    xhr.send(file);
-  });
+      xhr.onload = () => {
+        if (
+          xhr.status >= 200 &&
+          xhr.status < 300
+        ) {
+          onProgress?.(
+            100,
+            file.size,
+            file.size
+          );
+
+          resolve();
+        } else {
+          reject(
+            new Error(
+              `R2 upload failed with HTTP ${xhr.status}.`
+            )
+          );
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(
+          new Error(
+            'Network error while uploading to R2.'
+          )
+        );
+      };
+
+      xhr.onabort = () => {
+        reject(
+          new Error(
+            'Upload was cancelled.'
+          )
+        );
+      };
+
+      xhr.ontimeout = () => {
+        reject(
+          new Error(
+            'R2 upload timed out.'
+          )
+        );
+      };
+
+      xhr.timeout =
+        30 * 60 * 1000;
+
+      xhr.send(file);
+    }
+  );
 }
 
 /**
- * Extracts the Cloudflare R2 object key from a full public URL, relative path, or key.
- * Correctly handles:
+ * Extracts the Cloudflare R2 object key from:
  * - portfolio/videos/<filename>
  * - portfolio/images/<filename>
  * - https://pub-xxxx.r2.dev/portfolio/videos/<filename>
  * - https://cdn.domain.com/portfolio/images/<filename>
- * Returns null if the URL is empty or is an external/non-R2 resource.
  */
-export function extractR2Key(urlOrKey?: string): string | null {
+export function extractR2Key(
+  urlOrKey?: string
+): string | null {
   if (!urlOrKey) return null;
-  const trimmed = urlOrKey.trim();
+
+  const trimmed =
+    urlOrKey.trim();
+
   if (!trimmed) return null;
 
-  // If already a raw key
-  if (trimmed.startsWith('portfolio/videos/') || trimmed.startsWith('portfolio/images/') || trimmed.startsWith('portfolio/')) {
+  // Already a raw R2 key
+  if (
+    trimmed.startsWith(
+      'portfolio/videos/'
+    ) ||
+    trimmed.startsWith(
+      'portfolio/images/'
+    ) ||
+    trimmed.startsWith(
+      'portfolio/'
+    )
+  ) {
     try {
-      return decodeURIComponent(trimmed);
+      return decodeURIComponent(
+        trimmed
+      );
     } catch {
       return trimmed;
     }
   }
 
-  // If starting with leading slash e.g. /portfolio/videos/...
-  const cleaned = trimmed.replace(/^\/+/, '');
-  if (cleaned.startsWith('portfolio/videos/') || cleaned.startsWith('portfolio/images/') || cleaned.startsWith('portfolio/')) {
+  // Leading slash
+  const cleaned =
+    trimmed.replace(
+      /^\/+/,
+      ''
+    );
+
+  if (
+    cleaned.startsWith(
+      'portfolio/videos/'
+    ) ||
+    cleaned.startsWith(
+      'portfolio/images/'
+    ) ||
+    cleaned.startsWith(
+      'portfolio/'
+    )
+  ) {
     try {
-      return decodeURIComponent(cleaned);
+      return decodeURIComponent(
+        cleaned
+      );
     } catch {
       return cleaned;
     }
   }
 
-  // If a full URL (e.g. https://pub-xxxxx.r2.dev/portfolio/videos/...)
+  // Full URL
   try {
-    const url = new URL(trimmed);
-    const pathname = url.pathname;
-    const portfolioIdx = pathname.indexOf('portfolio/');
+    const url =
+      new URL(trimmed);
+
+    const pathname =
+      url.pathname;
+
+    const portfolioIdx =
+      pathname.indexOf(
+        'portfolio/'
+      );
+
     if (portfolioIdx !== -1) {
-      const key = pathname.substring(portfolioIdx);
+      const key =
+        pathname.substring(
+          portfolioIdx
+        );
+
       try {
-        return decodeURIComponent(key);
+        return decodeURIComponent(
+          key
+        );
       } catch {
         return key;
       }
     }
   } catch {
-    // Not a standard absolute URL
+    // Not a standard absolute URL.
   }
 
   return null;
 }
 
 /**
- * Returns true if the provided URL or path is a Cloudflare R2 object.
+ * Returns true if the provided URL/path is an R2 object.
  */
-export function isR2Url(urlOrKey?: string): boolean {
-  return extractR2Key(urlOrKey) !== null;
+export function isR2Url(
+  urlOrKey?: string
+): boolean {
+  return (
+    extractR2Key(
+      urlOrKey
+    ) !== null
+  );
 }
 
 /**
- * Deletes an object from Cloudflare R2 given its public URL or key.
- * If the resource is external or not an R2 file, skips without throwing.
- * If R2 deletion fails, throws an Error with details.
+ * Deletes an R2 object.
  */
-export async function deleteR2Object(urlOrKey?: string): Promise<boolean> {
-  const key = extractR2Key(urlOrKey);
+export async function deleteR2Object(
+  urlOrKey?: string
+): Promise<boolean> {
+  const key =
+    extractR2Key(
+      urlOrKey
+    );
+
   if (!key) {
-    // Not an R2 object (e.g. external link, empty, or non-R2 URL)
     return false;
   }
 
-  const response = await fetch('/api/r2/delete', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...creatorHeaders(),
-    },
-    credentials: 'include',
-    body: JSON.stringify({
-      key,
-      creatorToken: getCreatorToken(),
-    }),
-  });
+  const response =
+    await fetch(
+      '/api/r2/delete',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type':
+            'application/json',
+          ...creatorHeaders(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          key,
+          creatorToken:
+            getCreatorToken(),
+        }),
+      }
+    );
 
-  await parseJsonResponse<{ success: boolean; key?: string }>(response);
+  await parseJsonResponse<{
+    success: boolean;
+    key?: string;
+  }>(response);
+
   return true;
 }
 
 /**
- * Backward compatibility alias for deleteR2Object.
+ * Backward compatibility alias.
  */
-export const deleteVideoBlob = deleteR2Object;
+export const deleteVideoBlob =
+  deleteR2Object;
 
 export async function saveServerPortfolio(
   info: any,
   reels: any[]
 ): Promise<void> {
-  const response = await fetch(
-    '/api/portfolio',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...creatorHeaders(),
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        info,
-        reels: Array.isArray(reels)
-          ? reels
-          : [],
-        creatorToken: getCreatorToken(),
-      }),
-    }
-  );
+  const response =
+    await fetch(
+      '/api/portfolio',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type':
+            'application/json',
+          ...creatorHeaders(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          info,
+          reels:
+            Array.isArray(reels)
+              ? reels
+              : [],
+          creatorToken:
+            getCreatorToken(),
+        }),
+      }
+    );
 
   await parseJsonResponse(
     response
@@ -367,13 +518,14 @@ export async function saveServerPortfolio(
 }
 
 export async function fetchServerPortfolio() {
-  const response = await fetch(
-    '/api/portfolio',
-    {
-      method: 'GET',
-      cache: 'no-store',
-    }
-  );
+  const response =
+    await fetch(
+      '/api/portfolio',
+      {
+        method: 'GET',
+        cache: 'no-store',
+      }
+    );
 
   return parseJsonResponse<{
     info: any;
@@ -386,5 +538,6 @@ export function formatVideoUrl(
   url?: string
 ): string {
   if (!url) return '';
+
   return url.trim();
 }
