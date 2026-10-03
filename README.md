@@ -1,11 +1,25 @@
-<div align="center">
+# Video Portfolio
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+A single-page video portfolio with a private Creator Studio, Cloudflare R2 video/image storage, and server-side PIN authentication.
 
-  <h1>Built with AI Studio</h2>
+## Run locally
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+Prerequisites: Node.js 20+
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+1. Install dependencies:
+   `npm install`
+2. Configure the server environment variables from `.env.example`.
+3. Start the development server:
+   `npm run dev`
 
-</div>
+## Required environment variables
+
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
+- `R2_PUBLIC_BASE_URL`
+- `CREATOR_PIN`
+- `CREATOR_SESSION_SECRET`
+
+The R2 secret values and creator secrets must remain server-side. Do not put them in frontend source files.

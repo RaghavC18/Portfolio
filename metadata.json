@@ -1,0 +1,6 @@
+{
+  "name": "Video Editor Portfolio",
+  "description": "Showcase edited video showreels, short-form reels, and commercial projects with instant video uploading and client presentation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
