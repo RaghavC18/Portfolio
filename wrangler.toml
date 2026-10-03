@@ -1,0 +1,31 @@
+# ── Fill in the three placeholders below, then deploy ──────────────────────────
+
+name = "portfolio"
+main = "worker.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve the Vite build output as static files.
+# The Worker code above only runs for /api/* — everything else serves from ./dist,
+# with index.html as the SPA fallback.
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+
+# Native R2 binding — used for portfolio JSON reads/writes and file deletes.
+# bucket_name MUST match your actual R2 bucket name.
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "digital-porfolio"
+
+# Public (non-secret) config
+[vars]
+R2_ACCOUNT_ID = "REPLACE_WITH_YOUR_R2_ACCOUNT_ID"
+R2_BUCKET_NAME = "digital-porfolio"
+R2_PUBLIC_BASE_URL = "REPLACE_WITH_YOUR_PUBLIC_R2_URL"
+
+# Secrets (set with `wrangler secret put <NAME>` — see DEPLOY.md):
+#   CREATOR_PIN
+#   CREATOR_SESSION_SECRET
+#   R2_ACCESS_KEY_ID
+#   R2_SECRET_ACCESS_KEY
